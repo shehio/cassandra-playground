@@ -14,6 +14,9 @@ else
     exit 1
 fi
 
+# Start the cluster
+docker-compose up -d
+
 wait_for_service() {
     local host=$1
     local port=$2
@@ -71,4 +74,4 @@ echo "Node 2 state:"
 curl http://localhost:8082/state
 
 echo "Node 3 state:"
-curl http://localhost:8083/state 
+curl http://localhost:8083/state
