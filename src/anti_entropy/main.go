@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shehio/anti-entropy/src/anti_entropy/merkle"
@@ -17,6 +18,7 @@ import (
 
 var n *node.Node
 var merkleTree *merkle.MerkleTree
+var merkleTreeMu sync.RWMutex
 var httpClient = &http.Client{Timeout: time.Second * 10}
 
 func main() {
@@ -111,7 +113,9 @@ func handleMerkleRoot(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	merkleTreeMu.RLock()
 	rootHash := merkleTree.GetRootHash()
+	merkleTreeMu.RUnlock()
 	json.NewEncoder(w).Encode(map[string]string{"root_hash": rootHash})
 }
 
@@ -127,7 +131,9 @@ func handleMerkleVerify(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	merkleTreeMu.RLock()
 	isValid := merkleTree.Verify(req.Data)
+	merkleTreeMu.RUnlock()
 	json.NewEncoder(w).Encode(map[string]bool{"valid": isValid})
 }
 
@@ -238,5 +244,8 @@ func updateMerkleTree() {
 		entry := fmt.Sprintf("%s:%s", e.key, e.value)
 		data = append(data, []byte(entry))
 	}
-	merkleTree = merkle.NewMerkleTree(data)
-} 
+	newTree := merkle.NewMerkleTree(data)
+	merkleTreeMu.Lock()
+	merkleTree = newTree
+	merkleTreeMu.Unlock()
+}
