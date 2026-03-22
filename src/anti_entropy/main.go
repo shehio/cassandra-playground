@@ -114,8 +114,12 @@ func handleMerkleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	merkleTreeMu.RLock()
+	defer merkleTreeMu.RUnlock()
+	if merkleTree == nil {
+		http.Error(w, "not ready", http.StatusServiceUnavailable)
+		return
+	}
 	rootHash := merkleTree.GetRootHash()
-	merkleTreeMu.RUnlock()
 	json.NewEncoder(w).Encode(map[string]string{"root_hash": rootHash})
 }
 
@@ -132,8 +136,12 @@ func handleMerkleVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	merkleTreeMu.RLock()
+	defer merkleTreeMu.RUnlock()
+	if merkleTree == nil {
+		http.Error(w, "not ready", http.StatusServiceUnavailable)
+		return
+	}
 	isValid := merkleTree.Verify(req.Data)
-	merkleTreeMu.RUnlock()
 	json.NewEncoder(w).Encode(map[string]bool{"valid": isValid})
 }
 
@@ -228,17 +236,17 @@ func updateMerkleTree() {
 		key   string
 		value string
 	}
-	
+
 	entries := make([]entry, 0, len(n.GetState()))
 	for key, value := range n.GetState() {
 		entries = append(entries, entry{key, value})
 	}
-	
+
 	// Sort entries by key
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].key < entries[j].key
 	})
-	
+
 	var data [][]byte
 	for _, e := range entries {
 		entry := fmt.Sprintf("%s:%s", e.key, e.value)
