@@ -182,6 +182,30 @@ func handleSync(w http.ResponseWriter, r *http.Request) {
 }
 
 func syncWithPeer(peer string) {
+	// Read local merkle root under lock before syncing
+	merkleTreeMu.RLock()
+	localRoot := ""
+	if merkleTree != nil {
+		localRoot = merkleTree.GetRootHash()
+	}
+	merkleTreeMu.RUnlock()
+
+	// Compare merkle roots — skip full sync if trees already match
+	rootResp, err := httpClient.Get(fmt.Sprintf("http://%s/merkle/root", peer))
+	if err == nil {
+		var peerRoot struct {
+			RootHash string `json:"root_hash"`
+		}
+		if rootResp.StatusCode == http.StatusOK {
+			json.NewDecoder(rootResp.Body).Decode(&peerRoot)
+		}
+		rootResp.Body.Close()
+
+		if peerRoot.RootHash != "" && localRoot == peerRoot.RootHash {
+			return
+		}
+	}
+
 	state := n.GetState()
 	version := n.GetVersion()
 

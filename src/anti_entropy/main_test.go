@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +26,65 @@ func TestMerkleRootConcurrentAccess(t *testing.T) {
 		for i := 0; i < iterations; i++ {
 			n.UpdateState(fmt.Sprintf("key%d", i), fmt.Sprintf("value%d", i))
 			updateMerkleTree()
+		}
+	}()
+
+	// Concurrent reads via handleMerkleRoot
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			req := httptest.NewRequest(http.MethodGet, "/merkle/root", nil)
+			w := httptest.NewRecorder()
+			handleMerkleRoot(w, req)
+			if w.Code != http.StatusOK {
+				t.Errorf("handleMerkleRoot returned status %d", w.Code)
+			}
+		}
+	}()
+
+	wg.Wait()
+}
+
+func TestSyncWithPeerConcurrentAccess(t *testing.T) {
+	n = node.NewNode(1)
+	merkleTree = merkle.NewMerkleTree([][]byte{})
+
+	// Mock peer server that always returns a different root to trigger full sync
+	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/merkle/root":
+			json.NewEncoder(w).Encode(map[string]string{"root_hash": "different"})
+		case "/sync":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"state":   map[string]string{"peerKey": "peerValue"},
+				"version": map[string]int{"peerKey": 1},
+			})
+		}
+	}))
+	defer peer.Close()
+
+	peerAddr := peer.Listener.Addr().String()
+
+	var wg sync.WaitGroup
+	const iterations = 100
+
+	// Concurrent state updates + merkle tree rebuilds
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			n.UpdateState(fmt.Sprintf("key%d", i), fmt.Sprintf("value%d", i))
+			updateMerkleTree()
+		}
+	}()
+
+	// Concurrent syncs reading merkleTree for root comparison
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			syncWithPeer(peerAddr)
 		}
 	}()
 
