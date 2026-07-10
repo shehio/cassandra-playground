@@ -1,6 +1,8 @@
 package node
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 )
@@ -23,6 +25,25 @@ func TestUpdateState(t *testing.T) {
 	if state["test"] != "value" {
 		t.Errorf("Expected state[test] to be 'value', got %s", state["test"])
 	}
+}
+
+func TestConcurrentAccess(t *testing.T) {
+	// Simulates concurrent HTTP handlers and sync goroutines touching the
+	// same node, as happens in main.go. Run with -race to catch regressions.
+	node := NewNode(1)
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				node.UpdateState(fmt.Sprintf("key%d", i), "value")
+				_ = node.GetState()
+				_ = node.GetVersion()
+			}
+		}(i)
+	}
+	wg.Wait()
 }
 
 func TestGossip(t *testing.T) {

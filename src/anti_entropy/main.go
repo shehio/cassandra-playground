@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shehio/anti-entropy/src/anti_entropy/merkle"
@@ -16,6 +18,7 @@ import (
 )
 
 var n *node.Node
+var merkleMu sync.Mutex
 var merkleTree *merkle.MerkleTree
 var httpClient = &http.Client{Timeout: time.Second * 10}
 
@@ -31,11 +34,11 @@ func main() {
 
 	n = node.NewNode(nodeID)
 
+	var peers []string
 	peerNodes := os.Getenv("PEER_NODES")
 	if peerNodes != "" {
-		peers := strings.Split(peerNodes, ",")
+		peers = strings.Split(peerNodes, ",")
 		for _, peer := range peers {
-			// IRL, we would connect to these peers, for now, we just know about them
 			fmt.Printf("Node %d knows about peer: %s\n", nodeID, peer)
 		}
 	}
@@ -43,10 +46,13 @@ func main() {
 	// Initialize Merkle tree with empty state
 	merkleTree = merkle.NewMerkleTree([][]byte{})
 
+	// Periodic anti-entropy: sync with a random peer every 5 seconds.
 	go func() {
 		for {
-			n.Gossip()
 			time.Sleep(time.Second * 5)
+			if len(peers) > 0 {
+				syncWithPeer(peers[rand.Intn(len(peers))])
+			}
 		}
 	}()
 
@@ -111,7 +117,9 @@ func handleMerkleRoot(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	merkleMu.Lock()
 	rootHash := merkleTree.GetRootHash()
+	merkleMu.Unlock()
 	json.NewEncoder(w).Encode(map[string]string{"root_hash": rootHash})
 }
 
@@ -127,7 +135,10 @@ func handleMerkleVerify(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	isValid := merkleTree.Verify(req.Data)
+	merkleMu.Lock()
+	tree := merkleTree
+	merkleMu.Unlock()
+	isValid := tree.Verify(req.Data)
 	json.NewEncoder(w).Encode(map[string]bool{"valid": isValid})
 }
 
@@ -238,5 +249,7 @@ func updateMerkleTree() {
 		entry := fmt.Sprintf("%s:%s", e.key, e.value)
 		data = append(data, []byte(entry))
 	}
+	merkleMu.Lock()
 	merkleTree = merkle.NewMerkleTree(data)
+	merkleMu.Unlock()
 } 

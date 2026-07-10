@@ -1,8 +1,8 @@
 # Anti-Entropy Repair by Gossip Protocol
 
-[![Build](https://github.com/shehio/anti-entropy/actions/workflows/build.yml/badge.svg)](https://github.com/shehio/anti-entropy/actions/workflows/build.yml)
+[![Build](https://github.com/shehio/cassandra-playground/actions/workflows/build.yml/badge.svg)](https://github.com/shehio/cassandra-playground/actions/workflows/build.yml)
 
-A distributed system implementation using anti-entropy protocols for eventual consistency. This system uses Merkle trees for efficient state comparison and synchronization between nodes.
+A playground implementation of Cassandra-style anti-entropy repair for eventual consistency. Nodes gossip their state to peers and use Merkle trees for efficient state comparison and synchronization.
 
 ## Features
 
@@ -14,9 +14,9 @@ A distributed system implementation using anti-entropy protocols for eventual co
 
 ## Prerequisites
 
-- Go 1.21 or later
+- Go 1.24 or later
 - Docker and Docker Compose
-- Bazel build system
+- Bazel build system (optional — the plain Go toolchain works too)
 
 ## Building
 
@@ -24,6 +24,12 @@ To build the project:
 
 ```bash
 bazel build //src/anti_entropy:anti_entropy
+```
+
+or with the Go toolchain directly:
+
+```bash
+go build ./...
 ```
 
 ## Running Tests
@@ -36,9 +42,15 @@ Run all unit tests:
 bazel test //...
 ```
 
+or:
+
+```bash
+go test ./...
+```
+
 ### Integration Tests
 
-Run the Merkle tree integration tests:
+Start the three-node cluster first (see Docker Setup below), then run the Merkle tree integration tests:
 
 ```bash
 ./test_merkle.sh
@@ -47,7 +59,7 @@ Run the Merkle tree integration tests:
 This script will:
 1. Build the project
 2. Run Merkle tree tests
-3. Start three nodes
+3. Wait for the three nodes to be reachable
 4. Add test data
 5. Trigger gossip
 6. Verify state consistency
@@ -67,7 +79,7 @@ docker build -t anti-entropy .
 Start a cluster of three nodes:
 
 ```bash
-docker-compose up
+docker compose up
 ```
 
 This will start three nodes with the following configuration:
@@ -75,17 +87,17 @@ This will start three nodes with the following configuration:
 - Node 2: Port 8082
 - Node 3: Port 8083
 
-Each node will automatically connect to its peers and begin synchronization.
+Each node syncs with a random peer every 5 seconds; gossip can also be triggered manually via `POST /gossip`.
 
 ## API Endpoints
 
 Each node exposes the following HTTP endpoints:
 
 - `GET /state` - Get current node state
-- `POST /state` - Update node state
+- `POST /state` - Update node state (`{"key": "...", "value": "..."}`)
 - `POST /gossip` - Trigger gossip with peers
 - `GET /merkle/root` - Get Merkle tree root hash
-- `POST /merkle/verify` - Verify data against Merkle tree
+- `POST /merkle/verify` - Verify data against Merkle tree (`{"data": "<base64-encoded bytes>"}`)
 - `POST /sync` - Synchronize state with peers
 
 ## Testing Results
